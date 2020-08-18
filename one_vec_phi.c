@@ -18,11 +18,11 @@
 #define NX 100
 #define NY 100
 #define NZ 100
-#define Nt 50000
+#define Nt 200000
 
 /* These parameters may not have been reduced to the most minimal set of parameters
  * possible to describe the system. */
-#define DELTA_T 2.e-6
+#define DELTA_T 1.e-6
 #define mobility1_max 2.e5          /* polymorph 1 */
 #define DELTA_X 0.01
 #define DELTA_Y DELTA_X             /* Assume for now DELTA_X = DELTA_Y = DELTA_Z. */
@@ -31,15 +31,15 @@
 
 /* Interfacial */
 #define epsc 1.e-5
-#define eps_ani_2 3.
-#define eps_ani_4 2.
-#define eps_higher_order 1.e-9
+#define eps_ani_2 0.
+#define eps_ani_4 0.
+#define eps_higher_order 0.e-9
 #define eps_cs -2.5e-4
-#define eps_cm 0
+#define eps_cm -0.e-6
 #define eps_m 1.e-5
-#define eps_ms -0.e-4
+#define eps_ms -4.e-4
 #define gamma_cs -0.5
-#define gamma_cm -0.5
+#define gamma_cm -0.
 
 /* Rotation angle anisotropy. */
 #define deltabeta 2
@@ -49,8 +49,9 @@
 #define deltaM 200.
 
 /* u-related parameters */ 
-#define D_U 1.
-#define k1 10.
+#define D_U 2.
+#define ku 0.25
+#define k1 0.1
 
 /* Miscellaneous parameters to tune. */
 #define n 24
@@ -60,20 +61,18 @@
 #define gamma 10.
 #define INIT_U -1. /* Actually I think this always has to be -1. */
 #define INIT_THETA (0.*M_PI/180.)
-#define INIT_PHI (0.*M_PI/180.) /* To recover 2d case, set this to pi/2. */
+#define INIT_PHI (90.*M_PI/180.) /* To recover 2d case, set this to pi/2. */
 #define INIT_PHI_AMP 0.00
-#define kBT (0.e-6)
+#define kBT (0.e-7)
 #define cbar1 0.95
 #define ctilde1 0.01
-#define cbar2 0.5
-#define ctilde2 0.2
 #define sub_int 20.
 #define rm 20.
 #define theta_0 M_PI/6 /* The angle of epitaxial orientation, range in -60 to 60 degree */
 #define k2 0.2
 
 /* Mobility in the z direction. */
-#define m_z1 (-0.05 + 1.5*b1/(1.+b1)) /* positive values favor edge on (phi=90). */
+#define m_z1 (-0.0 + 1.5*b1/(1.+b1)) /* positive values favor edge on (phi=90). */
 #define n_phi 4. 
 
 /* corr_length is relative to a number scaled from 0 to 1. */
@@ -161,7 +160,7 @@ int main(int argc, char **argv)
     double dzeta_x, dzeta_y, dzeta_z, grad_zeta_sq;
     double du_x, du_y, du_z, grad_u_sq;
     double ddu[3][3];
-    double f_cs1, f_cs2, f_cm1, f_cm2, f_mc1, f_mc2, f_ms, f_m, f_ob1, f_ob2;
+    double f_cs1, f_cs2, f_cm1, f_cm2, f_mc1, f_mc2, f_ms, f_m, f_u, f_ob1_u, f_ob1_phi, f_ob2;
     int snapshot_counter = 0; /* XXX Change this when reading from file! */
     
     fftw_complex* correlation_func_x = fftw_alloc_complex(alloc_local);      //Still 2D noise
@@ -309,10 +308,10 @@ int main(int argc, char **argv)
         
         generate_noise_matrices(eta, sqrt_correlation_func_q, local_NX);
 
-        /* For conserved phi field
+        //For conserved phi field
         double fphi_sum = 0;
         int V_0 = 0;
-        */
+        
         /*-------------------------Calculation for every grid point-------------------------------*/
         for(int x=1; x<local_NX+1; x++)
         for(int y=1; y<NY+1; y++)
@@ -355,7 +354,7 @@ int main(int argc, char **argv)
             b1factor = (1. + b1*((1-1/sub_int*c1)*cos(n*theta)+c1*hex_factor)*sinphisq)*(1./(1. + b1));
             b2factor = (1. + b2*cos(n_phi*phi_s))*(1./(1. + b2));
 
-            m_value = (alpha_1/M_PI)*atan(-gamma*u[x][y][z]);
+            m_value = (alpha_1/M_PI)*atan(-gamma*(-0.5-0.5*1./*u[x][y][z]*/));
             factors = -b1factor*b2factor*absphisq1 - \
             (m_value - 1.5 - m_z1*cosphisq)*absphi + (m_value-0.5-m_z1*cosphisq);
             morefactors = (1. - 2./3.*absphi)*m_z1*cosphi*sinphi;
@@ -371,11 +370,12 @@ int main(int argc, char **argv)
             dphiz = -absphixy;
 
             /* Calculate obstacle energy */
-            f_ob1 = 2*u[x][y][z]*k1*pow(zeta[x][y][z],2);
+            f_ob1_u = k1*(1-u[x][y][z]*u[x][y][z])*(pow(zeta[x][y][z],2)+absphisq1);
+            f_ob1_phi = 2*k1*(u[x][y][z]-pow(u[x][y][z],3)/3.+2./3.);
             if (absphisq1 >= 0.02)
-                f_ob2 = k2*pow(zeta[x][y][z],1)*(1./absphi - absphi) + 4./cosh((absphisq1-1.1)/0.05)/cosh((absphisq1-1.1)/0.05);
+                f_ob2 = k2*pow(zeta[x][y][z],2)*(1./absphi - absphi) + 4./cosh((absphisq1-1.1)/0.05)/cosh((absphisq1-1.1)/0.05);
             else
-                f_ob2 = 0;
+                f_ob2 = 4./cosh((absphisq1-1.1)/0.05)/cosh((absphisq1-1.1)/0.05);
 
             /*------------------Compute derivatives with finite difference---------------*/
             absphipx = sqrt(phi[0][x+1][y][z]*phi[0][x+1][y][z] + phi[1][x+1][y][z]*phi[1][x+1][y][z] + phi[2][x+1][y][z]*phi[2][x+1][y][z]);
@@ -533,17 +533,19 @@ int main(int argc, char **argv)
             f_cm1 = 2*eps_cm*grad_u_sq;
             f_cm2 = 2*eps_cm*gamma_cm*(du_x*phix+du_y*phiy+du_z*phiz); 
 
+            /*-------------Calculate the first variation of the bulk energy of u------------*/
+            f_u = -4*ku*u[x][y][z]*(1-u[x][y][z]*u[x][y][z]);
             /*-------------Calculate the first variation of the interfacial energy of u------------*/
-            f_m = - 2*eps_m*Laplacian_u[x][y][z];
+            f_m = -2*eps_m*Laplacian_u[x][y][z];
             /*-------------Calculate the first variation of the interfacial energy of u|phi and u|sub w.r.t. u----------*/
-            f_mc1 = -2*eps_cm*Laplacian_u[x][y][z]*Laplacian_u[x][y][z];
+            f_mc1 = -2*eps_cm*absphisq1*Laplacian_u[x][y][z];
             f_mc2 = -2*eps_cm*gamma_cm*(phix*ddu[0][0]+phiy*ddu[1][1]+phiz*ddu[2][2])*(du_x*phix+du_y*phiy+du_z*phiz);
-            f_ms = 2*eps_ms*u[x][y][z]*grad_zeta_sq;
+            f_ms = 2*eps_ms*grad_zeta_sq;
             /*-------------Calculate the first variation of the total free energy w.r.t. u--------------*/
-            dFdu[x][y][z] = f_ob1 + f_m + f_mc1 + f_mc2 + f_ms;
+            dFdu[x][y][z] = f_u + f_ob1_u + f_m + f_mc1 + f_mc2 + f_ms;
 
             /*-----------------Calculate the anisotropic mobility for phi---------------*/
-            isotropic_mobility = (DELTA_T*mobility1_max);//*0.5*(1. + tanh(-(absphi-cbar1)/ctilde1));
+            isotropic_mobility = (DELTA_T*mobility1_max)*0.5*(1. + tanh(-(absphi-cbar1)/ctilde1));
             if (absphi >= 0.001 && dphi_r_norm >= 0.001)
             {
                 Mphi = isotropic_mobility;//*(1+deltaM*\
@@ -560,19 +562,19 @@ int main(int argc, char **argv)
                 fluct_amp = 0;
             
             /*------------------Calculate the change of phi----------------------*/
-            fphi[0][x][y][z] = 0;//Mphi*(-f_anix - eps_higher_order*2*LapLaplacian[0] - (f_ob2+f_cs1+f_cm1)*phi[0][x][y][z] - f_cs2*dzeta_x - f_cm2*du_x + l1 + factors*phi[0][x][y][z] + morefactors*dphix + last_terms_factor*(first_term*dphix + second_term_factor*(second_term1*dphix + second_term2*phi[1][x][y][z]))) + eta[0][x][y][z]*fluct_amp;
-            fphi[1][x][y][z] = 0;//Mphi*(-f_aniy - eps_higher_order*2*LapLaplacian[1] - (f_ob2+f_cs1+f_cm1)*phi[1][x][y][z] - f_cs2*dzeta_y - f_cm2*du_y + l2 + factors*phi[1][x][y][z] + morefactors*dphiy + last_terms_factor*(first_term*dphiy + second_term_factor*(second_term1*dphiy - second_term2*phi[0][x][y][z]))) + eta[1][x][y][z]*fluct_amp;
-            fphi[2][x][y][z] = 0;//Mphi*(-f_aniz - eps_higher_order*2*LapLaplacian[2] - (f_ob2+f_cs1+f_cm1)*phi[2][x][y][z] - f_cs2*dzeta_z - f_cm2*du_z + l3 + factors*phi[2][x][y][z] + morefactors*dphiz + last_terms_factor*(first_term*dphiz + second_term_factor*second_term1*dphiz)) + eta[2][x][y][z]*fluct_amp;
+            fphi[0][x][y][z] = Mphi*(-f_anix - eps_higher_order*2*LapLaplacian[0] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[0][x][y][z] - f_cs2*dzeta_x - f_cm2*du_x + l1 + factors*phi[0][x][y][z] + morefactors*dphix + last_terms_factor*(first_term*dphix + second_term_factor*(second_term1*dphix + second_term2*phi[1][x][y][z]))) + eta[0][x][y][z]*fluct_amp;
+            fphi[1][x][y][z] = Mphi*(-f_aniy - eps_higher_order*2*LapLaplacian[1] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[1][x][y][z] - f_cs2*dzeta_y - f_cm2*du_y + l2 + factors*phi[1][x][y][z] + morefactors*dphiy + last_terms_factor*(first_term*dphiy + second_term_factor*(second_term1*dphiy - second_term2*phi[0][x][y][z]))) + eta[1][x][y][z]*fluct_amp;
+            fphi[2][x][y][z] = Mphi*(-f_aniz - eps_higher_order*2*LapLaplacian[2] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[2][x][y][z] - f_cs2*dzeta_z - f_cm2*du_z + l3 + factors*phi[2][x][y][z] + morefactors*dphiz + last_terms_factor*(first_term*dphiz + second_term_factor*second_term1*dphiz)) + eta[2][x][y][z]*fluct_amp;
 
             // For conserved phi field
-            /*if(absphi >= 0.02)
+            if(absphi >= 0.02)
             {
                 fphi_sum += (fphi[0][x][y][z]*phi[0][x][y][z]+fphi[1][x][y][z]*phi[1][x][y][z]+fphi[2][x][y][z]*phi[2][x][y][z])/absphi;
                 V_0 += 1;
-            }*/
+            }
 
-            test1 = max(test1,fabs(Mphi*f_ob2*phi[2][x][y][z]));
-            test2 = max(test2,fabs(fphi[2][x][y][z]));
+            test1 = max(test1,fabs(Mphi*f_anix));
+            test2 = max(test2,fabs(fphi[0][x][y][z]));
             test5[x][y][z] = -Mphi*f_ob2*phi[2][x][y][z];
 
         }
@@ -602,8 +604,8 @@ int main(int argc, char **argv)
 
         /*-----------Update all the variables-------------*/
         // For conserved phi field
-        //MPI_Allreduce(MPI_IN_PLACE, &fphi_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        //MPI_Allreduce(MPI_IN_PLACE, &V_0, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &fphi_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &V_0, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
         vol_frac = 0.;
         for(int x=1; x<local_NX+1; x++)
@@ -613,30 +615,31 @@ int main(int argc, char **argv)
             absphisq1 = phi[0][x][y][z]*phi[0][x][y][z] + phi[1][x][y][z]*phi[1][x][y][z] + phi[2][x][y][z]*phi[2][x][y][z];
             absphi = sqrt(absphisq1);
             // For conserved phi field
-            /*for(int p=0; p<3; p++)
+            for(int p=0; p<3; p++)
             {
                 if(absphi >= DBL_EPSILON)
                     fphi[p][x][y][z] += -fphi_sum*phi[p][x][y][z]/absphi/V_0;
-            }*/
+            }
 
             newphi1 = phi[0][x][y][z] + fphi[0][x][y][z];
             newphi2 = phi[1][x][y][z] + fphi[1][x][y][z];
             newphi3 = phi[2][x][y][z] + fphi[2][x][y][z];
             dabsphi = sqrt(newphi1*newphi1 + newphi2*newphi2 + newphi3*newphi3) - absphi;
-            dphi_max = max(dphi_max, fabs(dabsphi));
             
             DELTA = 0.5;
-            fu[x][y][z] = DELTA_T*D_U*(Laplacian_u[x][y][z]+Laplacian_dFdu[x][y][z]) + dabsphi*(1./DELTA);
+            /*------------------Calculate the change of u------------------------*/
+            fu[x][y][z] = DELTA_T*D_U*Laplacian_dFdu[x][y][z] - 2*dabsphi*(1./DELTA);
 
-            /* Update phi's for the next time step */
+            /* Update phi and u for the next time step */
             phi[0][x][y][z] += fphi[0][x][y][z];
             phi[1][x][y][z] += fphi[1][x][y][z];
             phi[2][x][y][z] += fphi[2][x][y][z];
-
             u[x][y][z] += fu[x][y][z];
-            if(pow(phi[0][x][y][z],2)+pow(phi[1][x][y][z],2)+pow(phi[2][x][y][z],2)>0.01)
+
+            if(pow(phi[0][x][y][z],2)+pow(phi[1][x][y][z],2)+pow(phi[2][x][y][z],2)>0.5)
                 vol_frac += 1.;
-            phi_max = max(phi_max, pow(phi[0][x][y][z],2)+pow(phi[1][x][y][z],2)+pow(phi[2][x][y][z],2));
+            phi_max = max(phi_max, fabs(u[x][y][z]));
+            dphi_max = max(dphi_max, fabs(fu[x][y][z]));
         }
         MPI_Allreduce(MPI_IN_PLACE, &phi_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
         MPI_Allreduce(MPI_IN_PLACE, &dphi_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
@@ -1155,14 +1158,13 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
         for(int z=0; z<NZ; z++)
         {
             int ndx = x*NY*NZ+y*NZ+z;
-            double Radius = max(fabs(x-NX/2),fabs(y-NY/2));
-            Radius = max(Radius,fabs(z-40));
-            //double Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-50)*(z-50));//sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-NY/2)*(z-NY/2));
-            double diffuse = -0.5*(tanh((Radius-20)))+0.5;
+            //double Radius = max(fabs(x-NX/2),fabs(y-NY/2));
+            //Radius = max(Radius,fabs(z-40));
+            double Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-35)*(z-35));//sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-NY/2)*(z-NY/2));
+            double diffuse = -0.5*(tanh((Radius-20)/2.))+0.5;
             temp_phi0[ndx] = diffuse*cos(INIT_THETA)*sin(INIT_PHI);
             temp_phi1[ndx] = diffuse*sin(INIT_THETA)*sin(INIT_PHI);
             temp_phi2[ndx] = diffuse*cos(INIT_PHI);
-            //temp_u[ndx] = diffuse-1;
         }
 
         // transfer to self
@@ -1250,11 +1252,12 @@ void initialize_u(double * temp_u)
     for(int z=0; z<NZ; z++)
     {
         int ndx = x*NY*NZ+y*NZ+z;
-        temp_u[ndx] = -1.;
+        temp_u[ndx] = -0.;
+        /*Radius = max(fabs(x-NX/2),fabs(y-NY/2));
+        Radius = max(Radius,fabs(z-30));*/
+        Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-65)*(z-65));
         //temp_u[ndx] += (0.5*(tanh((-z+10.)/2.))-0.5);
-        //Radius = sqrt((x-NX/2)*(x-NX/2)+/*(y-NY/2)*(y-NY/2)*/+(z+110)*(z+110));
-        //temp_u[ndx] += 0.5*(tanh((Radius-200)))-0.5;
-        //temp_u[ndx] = max(temp_u[ndx],-1);
+        temp_u[ndx] += -(tanh((Radius-20)/2.));
     }
 }
 
@@ -1267,8 +1270,10 @@ void initialize_Mu(double * temp_Mu)
     {
         int ndx = x*NY*NZ+y*NZ+z;
         temp_Mu[ndx] = 0;
-        temp_Mu[ndx] += -0.5*(tanh((-z+10.)/2.))+0.5;
-        //Radius = sqrt((x-NX/2)*(x-NX/2)+/*(y-NY/2)*(y-NY/2)+*/(z+110)*(z+110));
+        Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z+10)*(z+10));
+        temp_Mu[ndx] += -0.5*(tanh((Radius-50)/2.))+0.5;
+        temp_Mu[ndx] += -0.5*(tanh((z-20)/2.))+0.5;
+        temp_Mu[ndx] = min(temp_Mu[ndx],1);
         //temp_Mu[ndx] += -0.5*(tanh((Radius-200)))+0.5;
         //temp_Mu[ndx] = min(temp_Mu[ndx],1);
         
@@ -1284,7 +1289,7 @@ void initialize_zeta(double * temp_zeta)
     {
         int ndx = x*NY*NZ+y*NZ+z;
         temp_zeta[ndx] = 0;
-        temp_zeta[ndx] += -0.5*(tanh((z-20.)/2.))+0.5;
+        //temp_zeta[ndx] += -0.5*(tanh((z-20.)/2.))+0.5;
         temp_zeta[ndx] = max(temp_zeta[ndx],0);
         
     }
