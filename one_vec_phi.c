@@ -17,28 +17,28 @@
  * Since N can be large, dynamically allocate arrays to prevent stack overflow.*/
 #define NX 100
 #define NY 100
-#define NZ 50
+#define NZ 100
 #define Nt 200000
 
 /* These parameters may not have been reduced to the most minimal set of parameters
  * possible to describe the system. */
-#define DELTA_T 1.e-6
-#define mobility1_max 2.e5          /* polymorph 1 */
+#define DELTA_T 3.e-7
+#define mobility1_max 1.e4          /* polymorph 1 */
 #define DELTA_X 0.01
 #define DELTA_Y DELTA_X             /* Assume for now DELTA_X = DELTA_Y = DELTA_Z. */
 #define DELTA_Z DELTA_X
 #define alpha_1 0.9
 
 /* Interfacial */
-#define epsc 1.e-5
+#define epsc 2.e-5
 #define eps_ani_2 0.
 #define eps_ani_4 0.
 #define eps_higher_order 0.e-9
-#define eps_cs -2.5e-4
-#define eps_cm -0.e-6
-#define eps_m 1.e-5
-#define eps_ms -8.e-5
-#define gamma_cs -0.5
+#define eps_cs -2.5e-5
+#define eps_cm -0.e-5
+#define eps_m 4.e-5
+#define eps_ms -3.e-4
+#define gamma_cs -0.
 #define gamma_cm -0.
 
 /* Rotation angle anisotropy. */
@@ -49,10 +49,10 @@
 #define deltaM 200.
 
 /* u-related parameters */ 
-#define D_U 2.
+#define D_U 20.
 #define ku 0.25
-#define k1_phi 0.1
-#define k1_zeta 1.
+#define k1_phi 0.01
+#define k1_zeta 0.1
 
 /* Miscellaneous parameters to tune. */
 #define n 24
@@ -95,9 +95,8 @@ double gaussrand(void);
 void generate_noise_matrices(double ****eta, fftw_complex* sqrt_correlation_func_q, int local_NX); 
 void Fill_boundary(double *** data, int local_NX);
 void Comunicate_boundary(double *** data, int local_NX);
-void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, double *** corr_func_data, int local_NX, int local_0_start);
+void initialize(double **** phi, double *** u, double *** zeta, double *** corr_func_data, int local_NX, int local_0_start);
 void initialize_u(double * temp_u);
-void initialize_Mu(double * temp_Mu);
 void initialize_zeta(double * temp_zeta);
 int main(int argc, char **argv)
 {
@@ -128,12 +127,10 @@ int main(int argc, char **argv)
     double*** u = Make3DDoubleArray(local_NX, NY, NZ);
     double*** fu = Make3DDoubleArray(local_NX, NY, NZ);              //Change of u in one step
     double*** corr_func_data = Make3DDoubleArray(local_NX, NY, NZ);
-    double*** Mu = Make3DDoubleArray(local_NX, NY, NZ);              //Order parameter for initial amorphous polymer
     double*** zeta = Make3DDoubleArray(local_NX, NY, NZ);            //Order parameter for substrate
     double*** dFdu = Make3DDoubleArray(local_NX, NY, NZ);            //delta F/ delta u
     double*** Laplacian_u = Make3DDoubleArray(local_NX, NY, NZ);     //nabla^2 u
     double*** Laplacian_dFdu = Make3DDoubleArray(local_NX, NY, NZ);  //nabla^2 dFdu
-    double*** test5 = Make3DDoubleArray(local_NX, NY, NZ);           //Just for test output
     double factors, morefactors;
     double absphi, absphisq1;
     double theta, phi_s;
@@ -156,10 +153,9 @@ int main(int argc, char **argv)
     double dphi[3][3];
     double ddphi[3][3][3];
     double f2x, f4x, f2y, f4y, f2z, f4z;
-    double vol_frac;
-    double test1, test2, test3, test4;
     double dzeta_x, dzeta_y, dzeta_z, grad_zeta_sq;
-    double du_x, du_y, du_z, grad_u_sq;
+    double grad_u_sq;
+    double du[3];
     double ddu[3][3];
     double f_cs1, f_cs2, f_cm1, f_cm2, f_mc1, f_mc2, f_ms, f_m, f_u, f_ob1_u, f_ob1_phi, f_ob2;
     int snapshot_counter = 0; /* XXX Change this when reading from file! */
@@ -174,19 +170,16 @@ int main(int argc, char **argv)
     srand(time(0)+myrank); /* Set random seed. */
     
     /*initialize the system*/
-    initialize(phi, u, Mu, zeta, corr_func_data, local_NX, local_0_start);
-    Comunicate_boundary(Mu, local_NX);
-    Fill_boundary(Mu, local_NX);
+    initialize(phi, u, zeta, corr_func_data, local_NX, local_0_start);
     Comunicate_boundary(zeta, local_NX);
     Fill_boundary(zeta, local_NX);
 
     /* Uncomment below when instead of initializing from the start, 
      * reading initial state from a file. */
-    /*read_from_file("snapshot1_020.txt", phi[0],local_NX, local_0_start);
-    read_from_file("snapshot2_020.txt", phi[1],local_NX, local_0_start);
-    read_from_file("snapshot3_020.txt", phi[2],local_NX, local_0_start);
-    read_from_file("snapshotu_020.txt", u,local_NX, local_0_start);*/
-    
+    /*read_from_file("snapshot1_010.txt", phi[0],local_NX, local_0_start);
+    read_from_file("snapshot2_010.txt", phi[1],local_NX, local_0_start);
+    read_from_file("snapshot3_010.txt", phi[2],local_NX, local_0_start);
+    read_from_file("snapshotu_010.txt", u,local_NX, local_0_start);*/
 
     sprintf(filename, "snapshot1_%03d.txt", snapshot_counter);
     write_to_file(filename, phi[0], local_NX, local_0_start);
@@ -197,7 +190,6 @@ int main(int argc, char **argv)
     sprintf(filename, "snapshotu_%03d.txt", snapshot_counter);
     write_to_file(filename, u, local_NX, local_0_start);
 
-    write_to_file("Initial_Mu.txt", Mu, local_NX, local_0_start);
     write_to_file("Initial_zeta.txt", zeta, local_NX, local_0_start);
 
     /*----------------------------------------------------------------------*/
@@ -220,16 +212,16 @@ int main(int argc, char **argv)
     free(correlation_func_x);
     fftw_destroy_plan(plan_correlation_func);
 
-    test4 = 0;
     clock_t before = clock();
     /*----------------------------Simulation start----------------------------*/
     for (int i = 1; i < Nt; i++)
     {
-        test1 = 0;
-        test2 = 0;
-        test3 = 0;
         double phi_max=0;
         double dphi_max=0;
+        double vol_frac=0;
+        double u_max=0;
+        double du_max=0;
+        double vol_frac_u=0;
         double d[3][3][3];
         /* Communicate the information for neighbor CPUs */
         for(int p=0; p<3; p++)
@@ -303,15 +295,13 @@ int main(int argc, char **argv)
             write_to_file(filename, phi[2], local_NX, local_0_start);
             sprintf(filename, "snapshotu_%03d.txt", snapshot_counter);
             write_to_file(filename, u, local_NX, local_0_start);
-            sprintf(filename, "snapshott_%03d.txt", snapshot_counter);
-            write_to_file(filename, test5, local_NX, local_0_start);
         }
         
         generate_noise_matrices(eta, sqrt_correlation_func_q, local_NX);
 
         //For conserved phi field
-        /*double fphi_sum = 0;
-        int V_0 = 0;*/
+        double fphi_sum = 0;
+        int V_0 = 0;
         
         /*-------------------------Calculation for every grid point-------------------------------*/
         for(int x=1; x<local_NX+1; x++)
@@ -355,7 +345,7 @@ int main(int argc, char **argv)
             b1factor = (1. + b1*((1-1/sub_int*c1)*cos(n*theta)+c1*hex_factor)*sinphisq)*(1./(1. + b1));
             b2factor = (1. + b2*cos(n_phi*phi_s))*(1./(1. + b2));
 
-            m_value = (alpha_1/M_PI)*atan(-gamma*(-0.5-0.5*1./*u[x][y][z]*/));
+            m_value = (alpha_1/M_PI)*atan(-gamma*(-0.5-0.5*u[x][y][z]));
             factors = -b1factor*b2factor*absphisq1 - \
             (m_value - 1.5 - m_z1*cosphisq)*absphi + (m_value-0.5-m_z1*cosphisq);
             morefactors = (1. - 2./3.*absphi)*m_z1*cosphi*sinphi;
@@ -371,7 +361,7 @@ int main(int argc, char **argv)
             dphiz = -absphixy;
 
             /* Calculate obstacle energy */
-            f_ob1_u = (1-u[x][y][z]*u[x][y][z])*(k1_phi*pow(zeta[x][y][z],2)+k1_zeta*absphisq1);
+            f_ob1_u = (1-u[x][y][z]*u[x][y][z])*(k1_zeta*pow(zeta[x][y][z],2)+k1_phi*absphisq1);
             f_ob1_phi = 2*k1_phi*(u[x][y][z]-pow(u[x][y][z],3)/3.+2./3.);
             if (absphisq1 >= 0.02)
                 f_ob2 = k2*pow(zeta[x][y][z],2)*(1./absphi - absphi) + 4./cosh((absphisq1-1.1)/0.05)/cosh((absphisq1-1.1)/0.05);
@@ -395,13 +385,19 @@ int main(int argc, char **argv)
             dzeta_z = (zeta[x][y][z+1] - zeta[x][y][z-1])*(1./(2.*DELTA_X));
             grad_zeta_sq = dzeta_x*dzeta_x + dzeta_y*dzeta_y + dzeta_z*dzeta_z;
 
-            du_x = (u[x+1][y][z] - u[x-1][y][z])*(1./(2.*DELTA_X));
-            du_y = (u[x][y+1][z] - u[x][y-1][z])*(1./(2.*DELTA_X));
-            du_z = (u[x][y][z+1] - u[x][y][z-1])*(1./(2.*DELTA_X));
-            grad_u_sq = du_x*du_x + du_y*du_y + du_z*du_z; 
-            ddu[0][0] = (u[x+1][y][z] - 2*u[x][y][z] +u[x-1][y][z])/DELTA_X/DELTA_X;
-            ddu[1][1] = (u[x][y+1][z] - 2*u[x][y][z] +u[x][y-1][z])/DELTA_X/DELTA_X;
-            ddu[2][2] = (u[x][y][z+1] - 2*u[x][y][z] +u[x][y][z-1])/DELTA_X/DELTA_X;
+            du[0] = (u[x+1][y][z] - u[x-1][y][z])*(1./(2.*DELTA_X));
+            du[1] = (u[x][y+1][z] - u[x][y-1][z])*(1./(2.*DELTA_X));
+            du[2] = (u[x][y][z+1] - u[x][y][z-1])*(1./(2.*DELTA_X)); 
+            ddu[0][0] = (u[x+1][y][z] - 2*u[x][y][z] + u[x-1][y][z])/DELTA_X/DELTA_X;
+            ddu[1][1] = (u[x][y+1][z] - 2*u[x][y][z] + u[x][y-1][z])/DELTA_X/DELTA_X;
+            ddu[2][2] = (u[x][y][z+1] - 2*u[x][y][z] + u[x][y][z-1])/DELTA_X/DELTA_X;
+            ddu[0][1] = (u[x+1][y+1][z] - u[x+1][y-1][z] - u[x-1][y+1][z] + u[x-1][y-1][z])/4/DELTA_X/DELTA_X;
+            ddu[0][2] = (u[x+1][y][z+1] - u[x+1][y][z-1] - u[x-1][y][z+1] + u[x-1][y][z-1])/4/DELTA_X/DELTA_X;
+            ddu[1][2] = (u[x][y+1][z+1] - u[x][y-1][z+1] - u[x][y+1][z-1] + u[x][y-1][z-1])/4/DELTA_X/DELTA_X;
+            ddu[1][0] = ddu[0][1];
+            ddu[2][0] = ddu[0][2];
+            ddu[2][1] = ddu[1][2];
+            grad_u_sq = du[0]*du[0] + du[1]*du[1] + du[2]*du[2];
 
             for(int ii=0; ii<3; ii++)
             {
@@ -532,7 +528,7 @@ int main(int argc, char **argv)
             f_cs1 = 2*eps_cs*grad_zeta_sq;
             f_cs2 = 2*eps_cs*gamma_cs*(dzeta_x*phix+dzeta_y*phiy+dzeta_z*phiz);
             f_cm1 = 2*eps_cm*grad_u_sq;
-            f_cm2 = 2*eps_cm*gamma_cm*(du_x*phix+du_y*phiy+du_z*phiz); 
+            f_cm2 = 2*eps_cm*gamma_cm*(du[0]*phix+du[1]*phiy+du[2]*phiz); 
 
             /*-------------Calculate the first variation of the bulk energy of u------------*/
             f_u = -4*ku*u[x][y][z]*(1-u[x][y][z]*u[x][y][z]);
@@ -540,7 +536,7 @@ int main(int argc, char **argv)
             f_m = -2*eps_m*Laplacian_u[x][y][z];
             /*-------------Calculate the first variation of the interfacial energy of u|phi and u|sub w.r.t. u----------*/
             f_mc1 = -2*eps_cm*absphisq1*Laplacian_u[x][y][z];
-            f_mc2 = -2*eps_cm*gamma_cm*(phix*ddu[0][0]+phiy*ddu[1][1]+phiz*ddu[2][2])*(du_x*phix+du_y*phiy+du_z*phiz);
+            f_mc2 = -2*eps_cm*gamma_cm*(pow(phiz,2)*ddu[2][2] + pow(phiy,2)*ddu[1][1] + phiz*(2*dphi[2][2]*du[2] + dphi[1][2]*du[1] + 2*phiy*ddu[1][2] + du[2]*(dphi[1][1] + dphi[0][0]) + dphi[0][2]*du[0] + 2*phix*ddu[0][2]) + phiy*(du[2]*dphi[2][1] + dphi[2][2]*du[1] + 2*dphi[1][1]*du[1] + du[1]*dphi[0][0] + dphi[0][1]*du[0] + 2*phix*ddu[0][1]) + phix*(du[1]*dphi[1][0] + du[2]*dphi[2][0] + dphi[2][2]*du[0] + dphi[1][1]*du[0] + 2*dphi[0][0]*du[0] + phix*ddu[0][0]));
             f_ms = 2*eps_ms*grad_zeta_sq;
             /*-------------Calculate the first variation of the total free energy w.r.t. u--------------*/
             dFdu[x][y][z] = f_u + f_ob1_u + f_m + f_mc1 + f_mc2 + f_ms;
@@ -563,9 +559,9 @@ int main(int argc, char **argv)
                 fluct_amp = 0;
             
             /*------------------Calculate the change of phi----------------------*/
-            fphi[0][x][y][z] = 0;//Mphi*(-f_anix - eps_higher_order*2*LapLaplacian[0] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[0][x][y][z] - f_cs2*dzeta_x - f_cm2*du_x + l1 + factors*phi[0][x][y][z] + morefactors*dphix + last_terms_factor*(first_term*dphix + second_term_factor*(second_term1*dphix + second_term2*phi[1][x][y][z]))) + eta[0][x][y][z]*fluct_amp;
-            fphi[1][x][y][z] = 0;//Mphi*(-f_aniy - eps_higher_order*2*LapLaplacian[1] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[1][x][y][z] - f_cs2*dzeta_y - f_cm2*du_y + l2 + factors*phi[1][x][y][z] + morefactors*dphiy + last_terms_factor*(first_term*dphiy + second_term_factor*(second_term1*dphiy - second_term2*phi[0][x][y][z]))) + eta[1][x][y][z]*fluct_amp;
-            fphi[2][x][y][z] = 0;//Mphi*(-f_aniz - eps_higher_order*2*LapLaplacian[2] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[2][x][y][z] - f_cs2*dzeta_z - f_cm2*du_z + l3 + factors*phi[2][x][y][z] + morefactors*dphiz + last_terms_factor*(first_term*dphiz + second_term_factor*second_term1*dphiz)) + eta[2][x][y][z]*fluct_amp;
+            fphi[0][x][y][z] = Mphi*(-f_anix - eps_higher_order*2*LapLaplacian[0] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[0][x][y][z] - f_cs2*dzeta_x - f_cm2*du[0] + l1 + factors*phi[0][x][y][z] + morefactors*dphix + last_terms_factor*(first_term*dphix + second_term_factor*(second_term1*dphix + second_term2*phi[1][x][y][z]))) + eta[0][x][y][z]*fluct_amp;
+            fphi[1][x][y][z] = Mphi*(-f_aniy - eps_higher_order*2*LapLaplacian[1] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[1][x][y][z] - f_cs2*dzeta_y - f_cm2*du[1] + l2 + factors*phi[1][x][y][z] + morefactors*dphiy + last_terms_factor*(first_term*dphiy + second_term_factor*(second_term1*dphiy - second_term2*phi[0][x][y][z]))) + eta[1][x][y][z]*fluct_amp;
+            fphi[2][x][y][z] = Mphi*(-f_aniz - eps_higher_order*2*LapLaplacian[2] - (f_ob1_phi+f_ob2+f_cs1+f_cm1)*phi[2][x][y][z] - f_cs2*dzeta_z - f_cm2*du[2] + l3 + factors*phi[2][x][y][z] + morefactors*dphiz + last_terms_factor*(first_term*dphiz + second_term_factor*second_term1*dphiz)) + eta[2][x][y][z]*fluct_amp;
 
             // For conserved phi field
             /*if(absphi >= 0.02)
@@ -573,11 +569,6 @@ int main(int argc, char **argv)
                 fphi_sum += (fphi[0][x][y][z]*phi[0][x][y][z]+fphi[1][x][y][z]*phi[1][x][y][z]+fphi[2][x][y][z]*phi[2][x][y][z])/absphi;
                 V_0 += 1;
             }*/
-
-
-            test1 = max(test1,fabs(Mphi*f_anix));
-            test2 = max(test2,fabs(fphi[0][x][y][z]));
-            test5[x][y][z] = -Mphi*f_ob2*phi[2][x][y][z];
 
         }
 
@@ -609,7 +600,6 @@ int main(int argc, char **argv)
         /*MPI_Allreduce(MPI_IN_PLACE, &fphi_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
         MPI_Allreduce(MPI_IN_PLACE, &V_0, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);*/
 
-        vol_frac = 0.;
         for(int x=1; x<local_NX+1; x++)
         for(int y=1; y<NY+1; y++)
         for(int z=1; z<NZ+1; z++)
@@ -628,7 +618,7 @@ int main(int argc, char **argv)
             newphi3 = phi[2][x][y][z] + fphi[2][x][y][z];
             dabsphi = sqrt(newphi1*newphi1 + newphi2*newphi2 + newphi3*newphi3) - absphi;
             
-            DELTA = 0.5;
+            DELTA = 0.8;
             /*------------------Calculate the change of u------------------------*/
             fu[x][y][z] = DELTA_T*D_U*Laplacian_dFdu[x][y][z] - 2*dabsphi*(1./DELTA);
 
@@ -640,23 +630,28 @@ int main(int argc, char **argv)
 
             if(pow(phi[0][x][y][z],2)+pow(phi[1][x][y][z],2)+pow(phi[2][x][y][z],2)>0.5)
                 vol_frac += 1.;
-            phi_max = max(phi_max, fabs(u[x][y][z]));
-            dphi_max = max(dphi_max, fabs(fu[x][y][z]));
+            for(int ii=0; ii<3; ii++)
+            {
+                phi_max = max(phi_max, fabs(phi[ii][x][y][z]));
+                dphi_max = max(dphi_max, fabs(fphi[ii][x][y][z]));
+            }
+            if(u[x][y][z]>0.5)
+                vol_frac_u += 1.;
+            u_max = max(u_max, fabs(u[x][y][z]));
+            du_max = max(du_max, fabs(fu[x][y][z]));
         }
         MPI_Allreduce(MPI_IN_PLACE, &phi_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
         MPI_Allreduce(MPI_IN_PLACE, &dphi_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
         MPI_Allreduce(MPI_IN_PLACE, &vol_frac, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        MPI_Allreduce(MPI_IN_PLACE, &test1, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-        MPI_Allreduce(MPI_IN_PLACE, &test2, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-        MPI_Allreduce(MPI_IN_PLACE, &test3, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        
-        test4 += test3;
+        MPI_Allreduce(MPI_IN_PLACE, &u_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &du_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &vol_frac_u, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
         /* Print information at every timestep */
         if(myrank ==0 /*&& i%10==0*/)
         {
             printf("step= %d, phi_max= %f, dphi_max= %f, vol_frac= %f\n", i, phi_max, dphi_max, vol_frac/NX/NY/NZ);
-            printf("step= %d, test1= %f, test2= %f, test3= %f, test4= %f\n", i, test1, test2, test3, test4);
+            printf("step= %d, u_max= %f, du_max= %f, vol_frac_u= %f\n", i, u_max, du_max, vol_frac_u/NX/NY/NZ);
         }
     }
     clock_t difference = clock()-before;
@@ -691,7 +686,6 @@ int main(int argc, char **argv)
             free(eta[2][x][y]);
             free(u[x][y]);
             free(fu[x][y]);
-            free(Mu[x][y]);
             free(zeta[x][y]);
             free(Laplacian[0][x][y]);
             free(Laplacian[1][x][y]);
@@ -711,7 +705,6 @@ int main(int argc, char **argv)
         free(eta[2][x]);
         free(u[x]);
         free(fu[x]);
-        free(Mu[x]);
         free(zeta[x]);
         free(Laplacian[0][x]);
         free(Laplacian[1][x]);
@@ -738,7 +731,6 @@ int main(int argc, char **argv)
     free(phi);
     free(fphi);
     free(eta);
-    free(Mu);
     free(zeta);
     free(Laplacian[0]);
     free(Laplacian[1]);
@@ -1109,14 +1101,13 @@ void Fill_boundary(double *** data, int local_NX)
     }
 }
 
-void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, double *** corr_func_data, int local_NX, int local_0_start)
+void initialize(double **** phi, double *** u, double *** zeta, double *** corr_func_data, int local_NX, int local_0_start)
 {
     int tag = 0;
     double * buffer_phi0 = (double*) malloc((local_NX*NY*NZ)*sizeof(double));
     double * buffer_phi1 = (double*) malloc((local_NX*NY*NZ)*sizeof(double));
     double * buffer_phi2 = (double*) malloc((local_NX*NY*NZ)*sizeof(double));
     double * buffer_u = (double*) malloc((local_NX*NY*NZ)*sizeof(double));
-    double * buffer_Mu = (double*) malloc((local_NX*NY*NZ)*sizeof(double));
     double * buffer_zeta = (double*) malloc((local_NX*NY*NZ)*sizeof(double));
     double * buffer_corr_func_data = (double*) malloc((local_NX*NY*NZ)*sizeof(double));
     int np, rank;
@@ -1132,7 +1123,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
         double * temp_phi1 = (double*) malloc((NX*NY*NZ)*sizeof(double));
         double * temp_phi2 = (double*) malloc((NX*NY*NZ)*sizeof(double));
         double * temp_u = (double*) malloc((NX*NY*NZ)*sizeof(double));
-        double * temp_Mu = (double*) malloc((NX*NY*NZ)*sizeof(double));
         double * temp_zeta = (double*) malloc((NX*NY*NZ)*sizeof(double));
         double * temp_corr_func_data = (double*) malloc((NX*NY*NZ)*sizeof(double));
         
@@ -1150,7 +1140,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
                 }
 
         initialize_u(temp_u);
-        initialize_Mu(temp_Mu);
         initialize_zeta(temp_zeta);
         
         /* Add the initial nucleus in the center. */
@@ -1162,8 +1151,8 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
             int ndx = x*NY*NZ+y*NZ+z;
             //double Radius = max(fabs(x-NX/2),fabs(y-NY/2));
             //Radius = max(Radius,fabs(z-40));
-            double Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-35)*(z-35));//sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-NY/2)*(z-NY/2));
-            double diffuse = 0;//-0.5*(tanh((Radius-20)/2.))+0.5;
+            double Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-NZ/2)*(z-NZ/2));//sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-NY/2)*(z-NY/2));
+            double diffuse = -0.5*(tanh((Radius-5)))+0.5;
             temp_phi0[ndx] = diffuse*cos(INIT_THETA)*sin(INIT_PHI);
             temp_phi1[ndx] = diffuse*sin(INIT_THETA)*sin(INIT_PHI);
             temp_phi2[ndx] = diffuse*cos(INIT_PHI);
@@ -1174,7 +1163,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
         memcpy(buffer_phi1, temp_phi1, local_NX*NY*NZ*sizeof(double));
         memcpy(buffer_phi2, temp_phi2, local_NX*NY*NZ*sizeof(double));
         memcpy(buffer_u, temp_u, local_NX*NY*NZ*sizeof(double));
-        memcpy(buffer_Mu, temp_Mu, local_NX*NY*NZ*sizeof(double));
         memcpy(buffer_zeta, temp_zeta, local_NX*NY*NZ*sizeof(double));
         memcpy(buffer_corr_func_data, temp_corr_func_data, local_NX*NY*NZ*sizeof(double));
         // transfer to slaves
@@ -1191,7 +1179,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
             MPI_Send(temp_phi1+offset, count, MPI_DOUBLE, i, 4, MPI_COMM_WORLD);
             MPI_Send(temp_phi2+offset, count, MPI_DOUBLE, i, 5, MPI_COMM_WORLD);
             MPI_Send(temp_u+offset, count, MPI_DOUBLE, i, 6, MPI_COMM_WORLD);
-            MPI_Send(temp_Mu+offset, count, MPI_DOUBLE, i, 7, MPI_COMM_WORLD);
             MPI_Send(temp_zeta+offset, count, MPI_DOUBLE, i, 8, MPI_COMM_WORLD);
             MPI_Send(temp_corr_func_data+offset, count, MPI_DOUBLE, i, 9, MPI_COMM_WORLD);
         }
@@ -1200,7 +1187,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
         free(temp_phi1);
         free(temp_phi2);
         free(temp_u);
-        free(temp_Mu);
         free(temp_zeta);
         free(temp_corr_func_data);
     }
@@ -1217,7 +1203,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
         MPI_Recv(buffer_phi1, count, MPI_DOUBLE, 0, 4, MPI_COMM_WORLD, &status);
         MPI_Recv(buffer_phi2, count, MPI_DOUBLE, 0, 5, MPI_COMM_WORLD, &status);
         MPI_Recv(buffer_u, count, MPI_DOUBLE, 0, 6, MPI_COMM_WORLD, &status);
-        MPI_Recv(buffer_Mu, count, MPI_DOUBLE, 0, 7, MPI_COMM_WORLD, &status);
         MPI_Recv(buffer_zeta, count, MPI_DOUBLE, 0, 8, MPI_COMM_WORLD, &status);
         MPI_Recv(buffer_corr_func_data, count, MPI_DOUBLE, 0, 9, MPI_COMM_WORLD, &status);
     }
@@ -1231,7 +1216,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
         phi[1][x][y][z] = buffer_phi1[ndx];
         phi[2][x][y][z] = buffer_phi2[ndx];
         u[x][y][z] = buffer_u[ndx];
-        Mu[x][y][z] = buffer_Mu[ndx];
         zeta[x][y][z] = buffer_zeta[ndx];
         corr_func_data[x][y][z] = buffer_corr_func_data[ndx];
     }
@@ -1240,7 +1224,6 @@ void initialize(double **** phi, double *** u, double *** Mu, double *** zeta, d
     free(buffer_phi1);
     free(buffer_phi2);
     free(buffer_u);
-    free(buffer_Mu);
     free(buffer_zeta);
     free(buffer_corr_func_data);
         
@@ -1254,31 +1237,12 @@ void initialize_u(double * temp_u)
     for(int z=0; z<NZ; z++)
     {
         int ndx = x*NY*NZ+y*NZ+z;
-        temp_u[ndx] = -0.;
+        temp_u[ndx] = 1.;
         /*Radius = max(fabs(x-NX/2),fabs(y-NY/2));
         Radius = max(Radius,fabs(z-30));*/
-        Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-25)*(z-25));
-        //temp_u[ndx] += (0.5*(tanh((-z+10.)/2.))-0.5);
-        temp_u[ndx] += -(tanh((Radius-20)/2.));
-    }
-}
-
-void initialize_Mu(double * temp_Mu)
-{
-    double Radius;
-    for(int x=0; x<NX; x++)
-    for(int y=0; y<NY; y++)
-    for(int z=0; z<NZ; z++)
-    {
-        int ndx = x*NY*NZ+y*NZ+z;
-        temp_Mu[ndx] = 0;
-        Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z+10)*(z+10));
-        temp_Mu[ndx] += -0.5*(tanh((Radius-50)/2.))+0.5;
-        temp_Mu[ndx] += -0.5*(tanh((z-20)/2.))+0.5;
-        temp_Mu[ndx] = min(temp_Mu[ndx],1);
-        //temp_Mu[ndx] += -0.5*(tanh((Radius-200)))+0.5;
-        //temp_Mu[ndx] = min(temp_Mu[ndx],1);
-        
+        //Radius = sqrt((x-NX/2)*(x-NX/2)+(y-NY/2)*(y-NY/2)+(z-70)*(z-70));
+        //temp_u[ndx] += -(tanh((-z+10.)/2.));
+        //temp_u[ndx] += -(tanh((Radius-20)/2.));
     }
 }
 
@@ -1291,8 +1255,8 @@ void initialize_zeta(double * temp_zeta)
     {
         int ndx = x*NY*NZ+y*NZ+z;
         temp_zeta[ndx] = 0;
-        temp_zeta[ndx] += -0.5*(tanh((z-10.)))+0.5;
-        temp_zeta[ndx] = max(temp_zeta[ndx],0);
+        //temp_zeta[ndx] += -0.5*(tanh((z-10.)))+0.5;
+        //temp_zeta[ndx] = max(temp_zeta[ndx],0);
         
     }
 }
